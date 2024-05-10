@@ -1,7 +1,8 @@
 from bitstring import BitArray, BitStream
 from rbsp import RBSPBits
-import sps
-import pps
+import h264sps
+import h264pps
+import h264slice
 
 
 file = open("res/test.h264", "rb")
@@ -25,13 +26,16 @@ for nalu in nalus :
         continue
     elif params['nal_unit_type'] == 7:
         print("sps")
-        spsparam = sps.dec_seq_parameter_set_data(params=params, rbsp=rbsp)
+        spsparam = h264sps.dec_seq_parameter_set_data(params=params, rbsp=rbsp)
     elif params['nal_unit_type'] == 8:
-        ppsparam = pps.dec_pic_parameter_set(rbsp)
+        ppsparam = h264pps.dec_pic_parameter_set(rbsp)
         print("pps")
     elif params['nal_unit_type'] == 5:
+        h264slice.slice_layer_without_partitioning_rbsp(params, spsparam, ppsparam, rbsp)
         print("IDR")
+
     elif params['nal_unit_type'] in [1,4]:
+        h264slice.slice_layer_without_partitioning_rbsp(params, spsparam, ppsparam, rbsp)
         print("PIC")
     
 

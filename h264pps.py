@@ -46,3 +46,6 @@ def dec_pic_parameter_set(rbsp:RBSPBits):
         pps['second_chroma_qp_index_offset'] = rbsp.se()
     print("PPS OK")
     return pps
+
+def SliceGroupChangeRate(pps):
+    return pps['slice_group_change_rate_minus1'] + 1

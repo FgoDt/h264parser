@@ -29,3 +29,6 @@ class RBSPBits :
                     return True
             i -= 1
         return False
+    
+    def byte_aligned(self):
+        return (self.bits.pos % 8) == 0

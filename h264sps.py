@@ -146,5 +146,41 @@ def dec_seq_parameter_set_data(params, rbsp: RBSPBits):
     sps['vui_parameters_present_flag'] = rbsp.u(1)
     if sps['vui_parameters_present_flag'] == 1:
         sps['vui']=dec_vui_parameters(rbsp)
+    set_default(sps)
     print(sps)
     return sps
+
+def set_default(sps):
+    if not 'separate_colour_plane_flag' in sps :
+        sps['separate_colour_plane_flag'] = 0
+    if not 'mb_adaptive_frame_filed_flag' in sps:
+        sps['mb_adaptive_frame_filed_flag'] = 0
+
+def PicWidthInMbs(sps):
+    return sps['pic_width_in_mbs_minus1'] + 1
+
+def PicWidthInSamplesL(sps):
+    return PicWidthInMbs(sps) * 16
+
+def PicWidthInSamplesC(sps):
+    return PicWidthInMbs(sps) * MbWidthC(sps)
+
+def MbWidthC(sps):
+    return 16//SubWidthC(sps)
+
+def MbHeightC(sps):
+    return 16//SubHeightC(sps)
+
+SubWidthCMap = [-1, 2, 2, 1]
+SubHeightCMap = [-1, 2, 1, 1]
+def SubWidthC(sps):
+    return SubWidthCMap[sps['chroma_format_idc']]
+
+def SubHeightC(sps):
+    return SubHeightCMap[sps['chroma_format_idc']]
+
+def PicHeightInMapUnits(sps):
+    return sps['pic_height_in_map_units_minus1'] + 1
+
+def PicSizeInMapUnits(sps):
+    return PicWidthInMbs(sps) * PicHeightInMapUnits(sps)

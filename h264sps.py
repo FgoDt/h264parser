@@ -184,3 +184,18 @@ def PicHeightInMapUnits(sps):
 
 def PicSizeInMapUnits(sps):
     return PicWidthInMbs(sps) * PicHeightInMapUnits(sps)
+
+def BitDepthY(sps):
+    return 8 + sps['bit_depth_luma_minus8']
+
+def QpBdOffsetY(sps):
+    return 6 * sps['bit_depth_luma_minus8']
+
+def BitDepthC(sps):
+    return 8 + sps['bit_depth_chroma_minus8']
+
+def QpBdOffsetC(sps):
+    return 6 * sps['bit_depth_chroma_minus8']
+
+def RawMbBits(sps):
+    return 256 * BitDepthY(sps) + 2 * MbWidthC * MbHeightC * BitDepthC

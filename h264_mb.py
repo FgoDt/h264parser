@@ -295,13 +295,13 @@ class Macroblock:
 
     def residual(self, startIdx, endIdx):
         if self.cavlc != None:
-            self.residual_block = None
+            self.residual_block = self.residual_block_cavlc
         else:
             self.residual_block = None
         
         self.i16x16DClevel = np.array(16)
         self.i16x16AClevel = np.array(15)
-        self.level4x4 = np.zeros(shape=(16,16))
+        self.level4x4 = np.zeros(shape=(16,16), dtype=np.int32)
         self.level8x8 = []
         self.startIdx = startIdx
         self.endIdx = endIdx
@@ -346,6 +346,7 @@ class Macroblock:
             else:
                 for i in range(64):
                     level8x8[i8x8][i] = 0
+        print(level4x4)
     
     def residual_block_cavlc(self, coeffLevel, startIdx, endIdx, maxNumCoeff):
         for i in range (maxNumCoeff):
@@ -356,7 +357,7 @@ class Macroblock:
                 suffixLength = 1
             else:
                 suffixLength = 0
-            levelVal = np.zeros(shape=(self.TotalCoeff))
+            levelVal = np.zeros(shape=(self.TotalCoeff), dtype=np.int32)
             for i in range(self.TotalCoeff):
                 if i < self.TrailingOnes:
                     trailing_ones_sign_flag = self.rbsp.u(1)
@@ -391,10 +392,27 @@ class Macroblock:
                     if abs(levelVal[i]) > ( 3 << (suffixLength - 1)) and suffixLength < 6:
                         suffixLength += 1
             
+            zerosLeft = 0
             if self.TotalCoeff < endIdx - startIdx + 1:
-                total_zeros = self.cavlc.
+                tzVlcIndex = self.TotalCoeff
+                key, total_zeros = self.cavlc.ce_total_zeros(tzVlcIndex)
+                zerosLeft = total_zeros
 
-
+            runVal = np.zeros(shape=(self.TotalCoeff), dtype=np.int32)
+            for i in range (self.TotalCoeff):
+                if zerosLeft > 0 :
+                    key, run_before = self.cavlc.ce_run_before(zerosLeft)
+                    runVal[i] = run_before
+                else:
+                    runVal[i] = 0
+                zerosLeft = zerosLeft - runVal[i]
+            runVal[self.TotalCoeff - 1] = zerosLeft
+            coeffNum = -1
+            for i in range(self.TotalCoeff):
+                coeffNum += runVal[i] + 1
+                coeffLevel[startIdx + coeffNum] = levelVal[i]
+            
+        print("done residual block cavlc")
         pass
 
     def residual_block_cabac(self, coeffLevel, startIdx, endIdx, maxNumCoeff):

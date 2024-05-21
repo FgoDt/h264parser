@@ -1,5 +1,6 @@
 from rbsp import RBSPBits
 import h264_mb
+import h264sps
 
 
 class H264SliceData:
@@ -37,6 +38,8 @@ class H264SliceData:
                 break
     
     def NextMbAddress(self, n):
-
+        i = n + 1
+        while True:
+            if i < h264sps.PicSizeInMapUnits
         pass
 

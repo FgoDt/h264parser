@@ -157,6 +157,16 @@ def set_default(sps):
     if sps['profile_idc'] == 183:
         sps['chroma_format_idc'] = 0
 
+def PicHeightInMapUnits(sps):
+    return sps['pic_height_in_map_units_minus1'] + 1
+
+def FrameHeightInMbs(sps):
+    return (2 - sps['frame_mbs_only_flag']) * PicHeightInMapUnits(sps)
+
+def PicHeightInMbs(sps, field_pic_flag):
+    return FrameHeightInMbs(sps)//(1 + field_pic_flag)
+
+
 def PicWidthInMbs(sps):
     return sps['pic_width_in_mbs_minus1'] + 1
 

@@ -89,6 +89,7 @@ def dec_seq_parameter_set_data(params, rbsp: RBSPBits):
         'level_idc':rbsp.u(8),
         'seq_parameter_set_id':rbsp.ue(),
     }
+    set_default(sps)
     profile_idc = sps['profile_idc']
     if (profile_idc == 100 or profile_idc == 110 or 
         profile_idc == 122 or profile_idc == 244 or 
@@ -146,15 +147,15 @@ def dec_seq_parameter_set_data(params, rbsp: RBSPBits):
     sps['vui_parameters_present_flag'] = rbsp.u(1)
     if sps['vui_parameters_present_flag'] == 1:
         sps['vui']=dec_vui_parameters(rbsp)
-    set_default(sps)
     print(sps)
     return sps
 
 def set_default(sps):
-    if not 'separate_colour_plane_flag' in sps :
-        sps['separate_colour_plane_flag'] = 0
-    if not 'mb_adaptive_frame_filed_flag' in sps:
-        sps['mb_adaptive_frame_filed_flag'] = 0
+    sps['separate_colour_plane_flag'] = 0
+    sps['mb_adaptive_frame_filed_flag'] = 0
+    sps['chroma_format_idc'] = 1
+    if sps['profile_idc'] == 183:
+        sps['chroma_format_idc'] = 0
 
 def PicWidthInMbs(sps):
     return sps['pic_width_in_mbs_minus1'] + 1

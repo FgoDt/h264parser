@@ -2,6 +2,7 @@ from rbsp import RBSPBits
 
 def dec_pic_parameter_set(rbsp:RBSPBits):
     pps={}
+    set_default(pps)
     pps['pic_parameter_set_id'] = rbsp.ue(),
     pps['seq_parameter_set_id'] = rbsp.ue(),
     pps['entropy_coding_mode_flag'] = rbsp.u(1)
@@ -46,6 +47,10 @@ def dec_pic_parameter_set(rbsp:RBSPBits):
         pps['second_chroma_qp_index_offset'] = rbsp.se()
     print("PPS OK")
     return pps
+
+def set_default(pps):
+    pps['transform_8x8_mode_flag'] = 0
+
 
 def SliceGroupChangeRate(pps):
     return pps['slice_group_change_rate_minus1'] + 1

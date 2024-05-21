@@ -2,6 +2,7 @@ from rbsp import RBSPBits
 import math
 import h264pps
 import h264sps
+import h264_cavlc_slice_data
 
 SLICETYPE = ['P', 'B', "I", "SP", "SI", "P", "B", "I", "SP", "SI"]
 
@@ -16,6 +17,7 @@ def slice_header(param, sps, pps, rbsp:RBSPBits):
     header['first_mb_in_slice'] = rbsp.ue()
     header['slice_type'] = rbsp.ue()
     slice_type = SLICETYPE[header['slice_type']]
+    header['slice_type'] = slice_type
     header['pic_parameter_set_id'] = rbsp.ue()
     if sps['separate_colour_plane_flag'] :
         header['colour_plane_id'] = rbsp.u(2)
@@ -40,9 +42,9 @@ def slice_header(param, sps, pps, rbsp:RBSPBits):
     if slice_type == 'P' or slice_type == 'SP' or (slice_type == 'B'):
         header['num_ref_idx_active_override_flag'] = rbsp.u(1)
         if header['num_ref_idx_active_override_flag']:
-            header['num_ref_idx_10_active_minus1'] = rbsp.ue()
+            pps['num_ref_idx_10_active_minus1'] = rbsp.ue()
             if (slice_type == 'B'):
-                header['num_ref_idx_11_active_minus1'] = rbsp.ue()
+                pps['num_ref_idx_11_active_minus1'] = rbsp.ue()
     ref_pic_list_reordering(header, sps, pps, rbsp)
     if ((pps['weighted_pred_flag'] and ((slice_type == 'P') or (slice_type == 'SP'))) or
         ((slice_type == 'B') and pps['weighted_bipred_idc'])):
@@ -70,32 +72,14 @@ def slice_data(header, param, sps, pps, rbsp:RBSPBits):
     if pps['entropy_coding_mode_flag']:
         while not rbsp.byte_aligned():
             rbsp.f(1)
-    slice_type = SLICETYPE[header['slice_type']]
-    MbaffFrameFlag = 1 if sps['mb_adaptive_frame_filed_flag'] and header['field_pic_flag'] else 0
-    CurrMbAddr = header['first_mb_in_slice'] * ( 1 + MbaffFrameFlag)
-    moreDataFlag = True
-    prevMbSkipped = False
+    else:
+        data = h264_cavlc_slice_data.H264SliceData(sps, pps, header, rbsp)
+        data.dec_slice()
 
-    data = {}
-
-    while True:
-        if slice_type != 'I' and slice_type != 'SI':
-            if not pps['entropy_coding_mode_flag']:
-                data['mb_skip_run'] = rbsp.ue()
-                prevMbSkipped = True if data['mb_skip_run'] > 0 else False
-                for i in range(data['mb_skip_run']):
-                    CurrMbAddr = NextMbAddress(CurrMbAddr)
-                moreDataFlag = rbsp.more_rbsp_data()
-            else:
-                data['mb_skip_flag'] = rbsp.ae()
-                moreDataFlag = not data['mb_skip_flag']
-        break
-    return data
-
-
+    
 
 def ref_pic_list_reordering(header, sps, pps, rbsp:RBSPBits):
-    slice_type = SLICETYPE[header['slice_type']]
+    slice_type = header['slice_type']
     if ((slice_type != 'I')) and ((slice_type !='SI')):
         header['ref_pic_list_reordering_flag_10'] = rbsp.u(1)
         if header['ref_pic_list_reordering_flag_10'] :

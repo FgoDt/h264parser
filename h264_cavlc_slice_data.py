@@ -1,23 +1,20 @@
 from rbsp import RBSPBits
 import h264_mb
-import h264sps
+from h264_slice_header import H264SliceHeader
 
 
 class H264SliceData:
-    def __init__(self, sps, pps, header, rbsp:RBSPBits):
-        self.rbsp = rbsp
-        self.sps = sps
-        self.pps = pps
+    def __init__(self, header:H264SliceHeader):
+        self.rbsp = header.rbsp
         self.header = header
 
     def dec_slice(self):
-        self.slice_type = self.header['slice_type']
-        self.MbaffFrameFlag = 1 if self.sps['mb_adaptive_frame_filed_flag'] and self.sheader['field_pic_flag'] else 0
-        self.CurrMbAddr = self.header['first_mb_in_slice'] * ( 1 + self.MbaffFrameFlag)
+        self.MbaffFrameFlag = 1 if self.header.sps.mb_adaptive_frame_filed_flag and self.header.field_pic_flag else 0
+        self.CurrMbAddr = self.header.first_mb_in_slice * ( 1 + self.MbaffFrameFlag)
         moreDataFlag = True
         prevMbSkipped = False
         while True:
-            if self.slice_type != 'I' and self.slice_type != 'SI':
+            if self.header.slice_type != 'I' and self.header.slice_type != 'SI':
                 mb_skip_run = self.rbsp.ue()
                 prevMbSkipped = mb_skip_run > 0
                 for i in range(mb_skip_run):
@@ -28,8 +25,8 @@ class H264SliceData:
             if moreDataFlag:
                 if self.MbaffFrameFlag and (CurrMbAddr%2 == 0 and (CurrMbAddr%2 == 1 and prevMbSkipped)):
                     self.mb_field_decoding_flag = self.rbsp.u(1)
-                    self.header['mb_field_decoding_flag'] = self.mb_field_decoding_flag
-                mb = h264_mb.Macroblock(self.header, self.sps, self.pps, self.rbsp)
+                    self.header.mb_field_decoding_flag = self.mb_field_decoding_flag
+                mb = h264_mb.Macroblock(self.header, self.header.sps, self.header.pps, self.header.rbsp)
                 mb.dec()
 
             moreDataFlag = self.rbsp.more_rbsp_data()
@@ -39,7 +36,7 @@ class H264SliceData:
     
     def NextMbAddress(self, n):
         i = n + 1
-        while True:
-            if i < h264sps.PicSizeInMapUnits
+        # while True:
+        #     if i < h264sps.PicSizeInMapUnits
         pass
 

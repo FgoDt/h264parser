@@ -1,5 +1,5 @@
 import math
-import h264sps
+import h264_sps
 
 def InverseRasterScan(a, b, c, d, e):
     if e == 0:
@@ -19,7 +19,6 @@ def inverse_4x4_luma_block_scanning_process(idx):
 def neighbouring_macroblock_addr(curr, n):
     if n == "A":
         mbAddrA = curr - 1
-        if 
 
 #6.4.12
 def neighbouring_locations(xN, yN, luma=True):

@@ -320,8 +320,8 @@ class Macroblock:
                             self.residual_block(i16x16AClevel[i8x8*4+i4x4], max(0, startIdx -1), endIdx-1, 15)
                         else:
                             luma4x4BlkIdx = i8x8 * 4 + i4x4
-                            #xDyD = GetxDyD('A', self.mb_type)
-                            #blkA = h264scan.derivation_process_neighbouring_4x4_luma_blocks(luma4x4BlkIdx,xDyD[0], xDyD[1])
+                            xDyD = GetxDyD('A', self.mb_type)
+                            blkA = h264scan.derivation_process_neighbouring_4x4_luma_blocks(luma4x4BlkIdx,xDyD[0], xDyD[1])
                             #xDyD = GetxDyD('B', self.mb_type)
                             #blkB = h264scan.derivation_process_neighbouring_4x4_luma_blocks(luma4x4BlkIdx,xDyD[0], xDyD[1])
                             nC = 0

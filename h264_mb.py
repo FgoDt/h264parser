@@ -1,9 +1,11 @@
 from rbsp import RBSPBits
 from h264_cavlc import H264CAVLCDec
 from h264_cabac_dec import H264CABACDec
+from h264_slice_data import H264SliceData
 import h264_pps
 import h264_sps
 import h264_slice_header
+import h264scan
 import numpy as np
 
 B_SLICES_MB_TYPE=[
@@ -73,43 +75,34 @@ I_SLICE_TYPE = [
 ,['I_PCM'        , 'na'  ,'na'         , 'na' ,'na' ,'na']
 ]
 
-def GetxDyD(N, mb_type='-', currSubMbType='-'):
-    if N == "A":
-        return (-1, 0)
-    if N == "B":
-        return (0, -1)
-    if N == "C":
-        prePartWidth = 0
-        if mb_type in ['P_Skip', 'B_Direct_16x16']:
-            prePartWidth = 16
-        elif mb_type == 'B_8x8':
-            if currSubMbType == "B_Direct_8x8":
-                prePartWidth = 16
-            else:
-                prePartWidth = SubMbPartWidth()
-        elif mb_type in ['P_8x8', 'P_8x8ref0']:
-            prePartWidth = SubMbPartWidth()
-        else:
-            prePartWidth = MbPartWidth(mb_type)
-        return (prePartWidth, -1)
-    if N == "D":
-        return (-1, -1)
 
+
+class block:
+    def __init__(self, TotalCoeff):
+        self.TotalCoeff = TotalCoeff
+        pass
 
 
 
 
 class Macroblock:
-    def __init__(self, slice_header:h264_slice_header.H264SliceHeader, sps:h264_sps.H264SPS, pps:h264_pps.H264PPS, rbsp:RBSPBits):
+    def __init__(self, rbsp:RBSPBits, slice_data:H264SliceData):
         self.rbsp = rbsp
-        self.sheader =  slice_header
-        self.sps = sps
-        self.pps = pps
+        self.sheader =  slice_data.header
+        self.sps = slice_data.sps
+        self.pps = slice_data.pps
+        self.CurrMbAddr = slice_data.CurrMbAddr
+        self.MBAFF = slice_data.MBAFF
+        self.slice_data = slice_data
+
         self.cavlc = None
         self.cabac = None
-        self.slice_type = slice_header.slice_type
+        self.slice_type = self.sheader.slice_type
         self.transform_8x8_mode_flag = self.pps.transform_8x8_mode_flag
         self.transform_size_8x8_flag = 0
+
+        self.slice_data.mbs.append(self)
+        self.blocks = []
         pass
 
 
@@ -276,11 +269,13 @@ class Macroblock:
                             #blkA = h264scan.derivation_process_neighbouring_4x4_luma_blocks(luma4x4BlkIdx,xDyD[0], xDyD[1])
                             #xDyD = GetxDyD('B', self.mb_type)
                             #blkB = h264scan.derivation_process_neighbouring_4x4_luma_blocks(luma4x4BlkIdx,xDyD[0], xDyD[1])
-                            nC = 0
+                            nC = self.cal_nC('LumaLevel4x4', luma4x4BlkIdx)
                             coeff_token, vals = self.cavlc.ce_coeff_token(nC)
                             self.coeff_token = coeff_token
                             self.TrailingOnes = vals[0]
                             self.TotalCoeff = vals[1]
+                            b = block(self.TotalCoeff)
+                            self.blocks.append(b)
                             
 
                             self.residual_block(level4x4[i8x8*4+i4x4], startIdx, endIdx, 16)
@@ -290,6 +285,8 @@ class Macroblock:
                     else:
                         for i in range(16):
                             level4x4[i8x8 * 4 + i4x4][i] = 0
+                        b = block(-1)
+                        self.blocks.append(b)
                     if self.cavlc != None and self.transform_size_8x8_flag:
                         for i in range(16):
                             level8x8[i8x8][4*i+i4x4] = level4x4[i8x8*4 + i4x4][i]
@@ -427,3 +424,160 @@ class Macroblock:
             return self.coded_block_pattern // 16
         slice_map = self.GetMbTypeMap()
         return slice_map[4]
+    
+    def cal_nC(self, level, idx):
+        if level == 'ChromaDCLevel':
+            if self.sps.ChromaArrayType == 1:
+                return -1
+            else:
+                return -2
+        elif level == 'Intra16x16DCLevel':
+            luma4x4BlkIdx = 0
+            idx = luma4x4BlkIdx
+        elif level == 'CbIntra16x16DCLevel':
+            cb4x4BlkIdx = 0
+            idx = cb4x4BlkIdx
+        elif level == 'CrIntra16x16DCLevel':
+            cr4x4BlkIdx = 0
+            idx = cr4x4BlkIdx
+        
+        blkA = None
+        blkB = None
+        nA = 0
+        nB = 0
+        nC = 0
+
+        if level in ['Intra16x16DCLevel', 'Intra16x16ACLevel', 'LumaLevel4x4']:
+            xD, yD = self.xDyD('A')
+            x, y = h264scan.inverse_4x4_luma_block_scanning_process(idx)
+            xN, yN = x + xD, y+yD
+            addr, xW, yW = self.neighbouring_locations(xN, yN)
+            blkidx = None 
+            if addr != None:
+                blkidx = h264scan.luma_block_indices_4x4(xW, yW)
+            if addr == None:
+                nA = None 
+            else:
+                blkA = addr
+                nA = self.slice_data.mbs[addr].blocks[blkidx].TotalCoeff
+
+            xD, yD = self.xDyD('B')
+            x, y = h264scan.inverse_4x4_luma_block_scanning_process(idx)
+            xN, yN = x + xD, y+yD
+            addr, xW, yW = self.neighbouring_locations(xN, yN)
+            blkidx = None 
+            if addr != None:
+                blkidx = h264scan.luma_block_indices_4x4(xW, yW)
+            if addr == None:
+                blkB = None 
+            else:
+                blkB = addr
+                nB  = self.slice_data.mbs[addr].blocks[blkidx].TotalCoeff
+
+        elif level in ['CbIntra16x16DCLevel', 'CbIntra16x16ACLevel', 'CbLevel4x4']:
+            raise Exception("NOT IMP")
+        elif level in ['CrIntra16x16DCLevel', 'CrIntra16x16ACLevel', 'CrLevel4x4']:
+            raise Exception("NOT IMP")
+        elif level in ['ChromaACLevel']:
+            raise Exception("NOT IMP")
+        
+        if blkA != None and blkB != None:
+            nC = (nA + nB + 1) >> 1
+        elif blkA != None:
+            nC = nA
+        elif blkB != None:
+            nC = nB
+        return nC
+
+
+    def xDyD(self, N):
+        if N == "A":
+            return (-1, 0)
+        if N == "B":
+            return (0, -1)
+        if N == "C":
+            prePartWidth = 0
+            if self.mb_type in ['P_Skip', 'B_Direct_16x16']:
+                prePartWidth = 16
+            elif mb_type == 'B_8x8':
+                if self.currSubMbType == "B_Direct_8x8":
+                    prePartWidth = 16
+                else:
+                    prePartWidth = self.SubMbPartWidth
+            elif mb_type in ['P_8x8', 'P_8x8ref0']:
+                prePartWidth = self.SubMbPartWidth
+            else:
+                prePartWidth = MbPartWidth(mb_type)
+            return (prePartWidth, -1)
+        if N == "D":
+            return (-1, -1)
+    
+    def neighbouring_locations(self, xN, yN, luma_invoke = True):
+        maxW = 16
+        maxH = 16
+        if not luma_invoke:
+            maxW = self.sps.MbWidthC
+            maxH = self.sps.MbHeightC
+        if not self.MBAFF:
+            mbAddrN, xW, xY = self.neighbouring_locations_non_MBAFF(xN, yN, maxW, maxH)
+        else:
+            raise Exception("NOT IMP")
+        
+        return mbAddrN, xW, xY
+        
+        
+
+
+    def neighbouring_locations_non_MBAFF(self, xN, yN, maxW, maxH):
+        t = 'na'
+        addr = None
+        if xN < 0 and yN < 0:
+            t = 'D'
+
+        elif xN < 0 and yN >= 0 and yN < maxH:
+            t = 'A'
+        elif xN >= 0 and xN < maxW and yN < 0 :
+            t = 'B'
+        elif xN >= 0 and xN < maxW and yN >= 0 and yN < maxH:
+            t = 'S'
+        elif xN >= maxW and yN < 0:
+            t = 'C'
+        else:
+            t = 'na'
+        addr = self.neighbouring_macroblock_addr(t)
+
+        if t == 'na' or addr == None:
+            return None, None, None
+        
+        xW = (xN + maxW) % maxW
+        yW = (yN + maxH) % maxH
+        
+        return addr, xW, yW
+
+    def neighbouring_macroblock_addr(self, t):
+        if t == 'S':
+            return self.CurrMbAddr
+
+        if t == 'A':
+            addr = self.CurrMbAddr - 1
+            if self.CurrMbAddr % self.sps.PicWidthInMbs == 0:
+                return None
+            return addr
+        if t == 'B':
+            addr = self.CurrMbAddr - self.sps.PicWidthInMbs
+            if addr < 0:
+                return None
+            return addr
+        if t == 'C':
+            addr = self.CurrMbAddr - self.sps.PicWidthInMbs + 1
+            if (self.CurrMbAddr+1)%self.sps.PicWidthInMbs == 0:
+                return None
+            return addr
+        if t == 'D':
+            if self.CurrMbAddr % self.sps.PicWidthInMbs == 0:
+                return None
+            addr = self.CurrMbAddr - self.sps.PicWidthInMbs - 1
+            if addr < 0:
+                return None
+            return addr
+        return None

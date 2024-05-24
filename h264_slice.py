@@ -3,7 +3,7 @@ import math
 from h264_pps import H264PPS
 from h264_sps import H264SPS
 from h264_slice_header import H264SliceHeader
-import h264_cavlc_slice_data
+import h264_cavlc_slice
 
 
 
@@ -23,7 +23,7 @@ class H264Slice:
             while not self.rbsp.byte_aligned():
                 rbsp.f(1)
         else:
-            data = h264_cavlc_slice_data.H264SliceData(self.header)
+            data = h264_cavlc_slice.H264CavlcSlice(self.header)
             data.dec_slice()
     
     def dec(self):

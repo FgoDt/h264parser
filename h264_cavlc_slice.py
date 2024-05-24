@@ -1,9 +1,10 @@
 from rbsp import RBSPBits
 import h264_mb
 from h264_slice_header import H264SliceHeader
+import h264_slice_data
 
 
-class H264SliceData:
+class H264CavlcSlice:
     def __init__(self, header:H264SliceHeader):
         self.rbsp = header.rbsp
         self.header = header
@@ -11,6 +12,9 @@ class H264SliceData:
     def dec_slice(self):
         self.MbaffFrameFlag = 1 if self.header.sps.mb_adaptive_frame_filed_flag and self.header.field_pic_flag else 0
         self.CurrMbAddr = self.header.first_mb_in_slice * ( 1 + self.MbaffFrameFlag)
+
+        self.slice_data = h264_slice_data.H264SliceData(self.header.sps, self.header.pps, self.header, self.CurrMbAddr, self.MbaffFrameFlag)
+
         moreDataFlag = True
         prevMbSkipped = False
         while True:
@@ -26,7 +30,7 @@ class H264SliceData:
                 if self.MbaffFrameFlag and (CurrMbAddr%2 == 0 and (CurrMbAddr%2 == 1 and prevMbSkipped)):
                     self.mb_field_decoding_flag = self.rbsp.u(1)
                     self.header.mb_field_decoding_flag = self.mb_field_decoding_flag
-                mb = h264_mb.Macroblock(self.header, self.header.sps, self.header.pps, self.header.rbsp)
+                mb = h264_mb.Macroblock(self.header.rbsp, self.slice_data)
                 mb.dec()
 
             moreDataFlag = self.rbsp.more_rbsp_data()

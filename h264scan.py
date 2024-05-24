@@ -13,7 +13,7 @@ def InverseRasterScan(a, b, c, d, e):
 def inverse_4x4_luma_block_scanning_process(idx):
     x = InverseRasterScan(idx//4, 8, 8, 16, 0) + InverseRasterScan(idx%4, 4, 4, 8, 0)
     y = InverseRasterScan(idx//4, 8, 8, 16, 1) + InverseRasterScan(idx%4, 4, 4, 8, 1)
-    return (x, y)
+    return x, y
 
 #6.4.9
 def neighbouring_macroblock_addr(curr, n):

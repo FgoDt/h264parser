@@ -221,21 +221,21 @@ class Macroblock:
                 else:
                     self.intra_chroma_pred_mode = self.cabac.ae()
         elif self.MbPartPredMode != 'Direct':
-            self.numMbPart = NumMbPart(self.raw_mb_type, self.slice_type, self.transform_8x8_mode_flag)
-            for mbPartIdx in range(self.numMbPart):
+            self.NumMbPart = self.num_mb_part() 
+            for mbPartIdx in range(self.NumMbPart):
                 if ((self.pps.num_ref_idx_10_active_minus1 > 0 or self.header.mb_field_decoding_flag != self.header.field_pic_flag) and  
-                    MbPartPredMod(self.mb_type, self.slice_type, self.transform_8x8_mode_flag, mbPartIdx) != 'Pred_L1'):
+                    self.MbPartPredMode != 'Pred_L1'):
                     self.ref_idx_10[mbPartIdx] = self.cavlc.te()
-            for mbPartIdx in range(self.numMbPart):
+            for mbPartIdx in range(self.NumMbPart):
                 if ((self.pps.num_ref_idx_10_active_minus1 > 0 or self.header.mb_field_decoding_flag != self.header.field_pic_flag) and  
-                    MbPartPredMod(self.mb_type, self.slice_type, self.transform_8x8_mode_flag, mbPartIdx) != 'Pred_L1'):
+                    self.MbPartPredMode != 'Pred_L1'):
                     self.ref_idx_11[mbPartIdx] = self.cavlc.te()
             for mbPartIdx in range(self.numMbPart):
-                if MbPartPredMod(self.mb_type, self.slice_type, self.transform_8x8_mode_flag, mbPartIdx) != 'Pred_L1':
+                if self.MbPartPredMode != 'Pred_L1':
                     for compIdx in range(2):
                         assert False
             for mbPartIdx in range(self.numMbPart):
-                if MbPartPredMod(self.mb_type, self.slice_type, self.transform_8x8_mode_flag, mbPartIdx) != 'Pred_L0':
+                if self.MbPartPredMode != 'Pred_L0':
                     for compIdx in range(2):
                         assert False
 

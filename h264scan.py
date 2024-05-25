@@ -15,6 +15,12 @@ def inverse_4x4_luma_block_scanning_process(idx):
     y = InverseRasterScan(idx//4, 8, 8, 16, 1) + InverseRasterScan(idx%4, 4, 4, 8, 1)
     return x, y
 
+#6.4.7
+def inverse_4x4_chroma_block_scanning_process(idx):
+    x = InverseRasterScan(idx, 4, 4, 8, 0)
+    y = InverseRasterScan(idx, 4, 4, 8, 1)
+    return x, y
+
 #6.4.9
 def neighbouring_macroblock_addr(curr, n):
     if n == "A":
@@ -125,6 +131,10 @@ def derivation_process_neighbouring_macroblock_addr(MBAFF:bool, curr:int, PicWid
 #6.4.13.1
 def luma_block_indices_4x4(xP, yP):
     idx = 8 * ( yP // 8 ) + 4 * ( xP // 8 ) + 2 * ( ( yP % 8 ) // 4 ) + ( ( xP % 8 ) // 4 )
+    return idx
+
+def chroma_block_indices_4x4(xP, yP):
+    idx = 2 * ( yP // 4 ) + ( xP // 4 )
     return idx
 
 for i in range(16):

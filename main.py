@@ -13,8 +13,7 @@ ppsparam = None
 for nalu in nalus :
     #todo nalu need check emulation_prevention_three_byte
     nalu.replace('0x000003', '0x0000', bytealigned=True)
-    rbsp = RBSPBits(BitStream(nalu))
-    ret = rbsp.u(24)
+    rbsp = RBSPBits(BitStream(nalu[24:]))
     params = {
         "forbidden_zero_bit": rbsp.f(1),
         "nal_ref_idc": rbsp.u(2),

@@ -2,12 +2,14 @@ from rbsp import RBSPBits
 import h264_mb
 from h264_slice_header import H264SliceHeader
 import h264_slice_data
+import numpy as np
 
 
 class H264CavlcSlice:
     def __init__(self, header:H264SliceHeader):
         self.rbsp = header.rbsp
         self.header = header
+        self.slice_group_map()
 
     def dec_slice(self):
         self.MbaffFrameFlag = 1 if self.header.sps.mb_adaptive_frame_filed_flag and self.header.field_pic_flag else 0
@@ -22,25 +24,40 @@ class H264CavlcSlice:
                 mb_skip_run = self.rbsp.ue()
                 prevMbSkipped = mb_skip_run > 0
                 for i in range(mb_skip_run):
-                    CurrMbAddr = self.NextMbAddress(CurrMbAddr)
+                    self.CurrMbAddr = self.NextMbAddress(self.CurrMbAddr)
                 if mb_skip_run > 0 :
                     moreDataFlag = self.rbsp.more_rbsp_data()
                 
             if moreDataFlag:
-                if self.MbaffFrameFlag and (CurrMbAddr%2 == 0 and (CurrMbAddr%2 == 1 and prevMbSkipped)):
+                if self.MbaffFrameFlag and (self.CurrMbAddr%2 == 0 and (self.CurrMbAddr%2 == 1 and prevMbSkipped)):
                     self.mb_field_decoding_flag = self.rbsp.u(1)
                     self.header.mb_field_decoding_flag = self.mb_field_decoding_flag
                 mb = h264_mb.Macroblock(self.header.rbsp, self.slice_data)
                 mb.dec()
 
             moreDataFlag = self.rbsp.more_rbsp_data()
-            CurrMbAddr = self.NextMbAddress(CurrMbAddr)
+            self.CurrMbAddr = self.NextMbAddress(self.CurrMbAddr)
+            self.slice_data.CurrMbAddr = self.CurrMbAddr
             if not moreDataFlag :
                 break
     
     def NextMbAddress(self, n):
         i = n + 1
-        # while True:
-        #     if i < h264sps.PicSizeInMapUnits
-        pass
+        while True:
+            if not (i < self.header.sps.PicSizeInMapUnits and self.mapUnitTosliceGroupMap[i] != self.mapUnitTosliceGroupMap[n]):
+                break
+
+            i+=1
+        return i
+        
+    def slice_group_map(self):
+        if self.header.pps.num_slice_groups_minus1 == 1 and (self.header.pps.slice_group_map_type in [3, 4, 5]):
+            raise Exception("NOT IMP")
+        if self.header.pps.num_slice_groups_minus1 == 0:
+            self.mapUnitTosliceGroupMap = np.zeros(self.header.sps.PicSizeInMapUnits)
+        else:
+            raise Exception("NOT IMP")
+
+
+        
 

@@ -85,6 +85,24 @@ TOTAL_ZEROS_MAP = [
 [15  ,'000000001'  ,'-'         ,'-'        ,'-'        ,'-'        ,'-'          ,'-'          ,'-'          ,'-'          ,'-'      ,'-'      ,'-'      ,'-'      ,'-'  ,'-'],
 ]
 
+TOTAL_ZEROS_MAP_4 = [
+[0 ,'1'     ,'1'    ,'1'],
+[1 ,'01'    ,'01'   ,'0'],
+[2 ,'001'   ,'00'   ,'-'],
+[3 ,'000'   ,'-'    ,'-'],
+]
+
+TOTAL_ZEROS_MAP_8 = [
+[0 ,'1'     ,'000'  ,'000'  ,'110'  ,'00'   ,'00'   ,'0'],
+[1 ,'010'   ,'01'   ,'001'  ,'00'   ,'01'   ,'01'   ,'1'],
+[2 ,'011'   ,'001'  ,'01'   ,'01'   ,'10'   ,'1'    ,'-'],
+[3 ,'0010'  ,'100'  ,'10'   ,'10'   ,'11'   ,'-'    ,'-'],
+[4 ,'0011'  ,'101'  ,'110'  ,'111'  ,'-'    ,'-'    ,'-'],
+[5 ,'0001'  ,'110'  ,'111'  ,'-'    ,'-'    ,'-'    ,'-'],
+[6 ,'00001' ,'111'  ,'-'    ,'-'    ,'-'    ,'-'    ,'-'],
+[7 ,'00000' ,'-'    ,'-'    ,'-'    ,'-'    ,'-'    ,'-'],
+]
+
 RUN_BEFORE_MAP = [
 [0  ,'1' ,'1'    ,'11'   ,'11'   ,'11'    ,'11'  ,'111'],
 [1  ,'0' ,'01'   ,'10'   ,'10'   ,'10'    ,'000' ,'110'],
@@ -113,7 +131,15 @@ class H264CAVLCDec:
         self.map_neg_1 = {}
         self.map_neg_2 = {}
         self.total_zeros_map = []
+        self.total_zeros_map_4 = []
+        self.total_zeros_map_8 = []
         self.run_before_map = []
+
+        for i in range(3):
+            self.total_zeros_map_4.append({})
+        
+        for i in range(7):
+            self.total_zeros_map_8.append({})
 
         for i in range(16):
             self.total_zeros_map.append({})
@@ -131,9 +157,9 @@ class H264CAVLCDec:
             self.map_0_2[row[2]] = val
             self.map_2_4[row[3]] = val
             self.map_4_8[row[4]] = val
-            self.map_4_8[row[5]] = val
-            self.map_4_8[row[6]] = val
-            self.map_4_8[row[7]] = val
+            self.map_8_inf[row[5]] = val
+            self.map_neg_1[row[6]] = val
+            self.map_neg_2[row[7]] = val
         
         for row in TOTAL_ZEROS_MAP:
             i = 0
@@ -145,6 +171,28 @@ class H264CAVLCDec:
                     continue
 
                 self.total_zeros_map[i-1][val] = tmp
+                i += 1
+        
+        for row in TOTAL_ZEROS_MAP_4:
+            i = 0
+            tmp = 0
+            for val in row:
+                if i == 0:
+                    tmp = val
+                    i += 1
+                    continue
+                self.total_zeros_map_4[i-1][val] = tmp
+                i += 1
+        
+        for  row in TOTAL_ZEROS_MAP_8:
+            i = 0
+            tmp = 0
+            for val in row:
+                if i == 0:
+                    tmp = val
+                    i += 1
+                    continue
+                self.total_zeros_map_8[i-1][val] = tmp
                 i += 1
         
         for row in RUN_BEFORE_MAP:
@@ -183,6 +231,7 @@ class H264CAVLCDec:
             else:
                 key += '1'
             if key in select_map:
+                print(f"trailingOnes: {select_map[key][0]} totalCoeff: {select_map[key][1]} bitloc: {self.rbsp.bits.pos} token:{key}")
                 return (key, select_map[key]) 
 
     def  ce_level_prefix(self):
@@ -194,8 +243,15 @@ class H264CAVLCDec:
             else:
                 level_prefix += 1
     
-    def ce_total_zeros(self, tzVlcIndex):
-        select_map = self.total_zeros_map[tzVlcIndex -1]
+    def ce_total_zeros(self, tzVlcIndex, maxNumCoeff):
+        zeros_map = None
+        if maxNumCoeff == 4:
+            zeros_map = self.total_zeros_map_4
+        elif maxNumCoeff == 8:
+            zeros_map = self.total_zeros_map_8
+        else:
+            zeros_map = self.total_zeros_map
+        select_map = zeros_map[tzVlcIndex -1]
         key = ""
         while True:
             bit = self.rbsp.f(1)

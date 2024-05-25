@@ -80,6 +80,8 @@ I_SLICE_TYPE = [
 class block:
     def __init__(self, TotalCoeff):
         self.TotalCoeff = TotalCoeff
+        self.type = None
+        self.level = None
         pass
 
 
@@ -103,6 +105,9 @@ class Macroblock:
 
         self.slice_data.mbs.append(self)
         self.blocks = []
+        self.ChromaACLevelCrBlocks = []
+        self.ChromaACLevelCbBlocks = []
+        self.ChromaDCLevelBlocks = []
         pass
 
 
@@ -245,14 +250,66 @@ class Macroblock:
         else:
             self.residual_block = None
         
-        self.i16x16DClevel = np.array(16)
-        self.i16x16AClevel = np.array(15)
-        self.level4x4 = np.zeros(shape=(16,16), dtype=np.int32)
-        self.level8x8 = []
+        self.Intral16x16DClevel = None
+        self.Intral16x16AClevel = None
+        self.LumaLevel4x4 = np.zeros(shape=(16,16), dtype=np.int32)
+        self.LumaLevel8x8 = None
         self.startIdx = startIdx
         self.endIdx = endIdx
 
-        self.residual_luma(self.i16x16DClevel, self.i16x16AClevel, self.level4x4, self.level8x8, self.startIdx, self.endIdx)
+        self.residual_luma(self.Intral16x16DClevel, self.Intral16x16AClevel, self.LumaLevel4x4, self.LumaLevel8x8, self.startIdx, self.endIdx)
+
+        if self.sps.ChromaArrayType in [1, 2]:
+            NumC8x8 = 4 // (self.sps.SubWidthC * self.sps.SubHeightC)
+            self.ChromaDCLevel = np.zeros(shape=(2 , 4 * NumC8x8), dtype=np.int32)
+            for iCbCr in range(2):
+                if ((self.CodedBlockPatternChroma & 3) and startIdx == 0):
+
+                    nC = self.cal_nC('ChromaDCLevel', 0, iCbCr)
+                    coeff_token, vals = self.cavlc.ce_coeff_token(nC)
+                    self.coeff_token = coeff_token
+                    self.TrailingOnes = vals[0]
+                    self.TotalCoeff = vals[1]
+                    b = block(self.TotalCoeff)
+                    self.ChromaDCLevelBlocks.append(b)
+
+                    self.residual_block(self.ChromaDCLevel[iCbCr], 0, 4*NumC8x8-1, 4*NumC8x8)
+
+                else:
+                    for i in range(4*NumC8x8):
+                        self.ChromaDCLevel[iCbCr][i] = 0
+
+            self.ChromaACLevel = np.zeros(shape=(2, NumC8x8*4, 15), dtype=np.int32)
+            for iCbCr in range(2):
+                for i8x8 in range (NumC8x8):
+                    for i4x4 in range(4):
+                        if self.CodedBlockPatternChroma & 2:
+                            idx = iCbCr * 2 + i8x8 * NumC8x8 + i4x4
+                            nC = self.cal_nC('ChromaACLevel', idx)
+                            coeff_token, vals = self.cavlc.ce_coeff_token(nC)
+                            self.coeff_token = coeff_token
+                            self.TrailingOnes = vals[0]
+                            self.TotalCoeff = vals[1]
+                            b = block(self.TotalCoeff)
+                            if iCbCr == 0:
+                                self.ChromaACLevelCbBlocks.append(b)
+                            else:
+                                self.ChromaACLevelCrBlocks.append(b)
+
+                            self.residual_block(self.ChromaACLevel[iCbCr][i8x8*4+i4x4], max(0, startIdx-1), endIdx-1, 15)
+                        else:
+                            for i in range(15):
+                                self.ChromaACLevel[iCbCr][i8x8*4+i4x4][i] = 0
+        elif self.sps.ChromaArrayType == 3:
+            self.CbLevel4x4 = np.zeros(shape=(16,16), dtype=np.int32)
+            self.CbLevel8x8 = np.zeros(shape=(16,16), dtype=np.int32)
+
+            self.CrLevel4x4 = np.zeros(shape=(16,16), dtype=np.int32)
+            self.CrLevel8x8 = np.zeros(shape=(16,16), dtype=np.int32)
+
+            self.residual_luma(self.Intral16x16DClevel, self.Intral16x16AClevel, self.CbLevel4x4, self.CbLevel8x8, startIdx, endIdx)
+            self.residual_luma(self.Intral16x16DClevel, self.Intral16x16AClevel, self.CrLevel4x4, self.CrLevel8x8, startIdx, endIdx)
+
 
     def residual_luma(self, i16x16DClevel, i16x16AClevel, level4x4, level8x8, startIdx, endIdx):
         if startIdx == 0 and self.MbPartPredMode == 'Intra_16x16':
@@ -285,7 +342,7 @@ class Macroblock:
                     else:
                         for i in range(16):
                             level4x4[i8x8 * 4 + i4x4][i] = 0
-                        b = block(-1)
+                        b = block(0)
                         self.blocks.append(b)
                     if self.cavlc != None and self.transform_size_8x8_flag:
                         for i in range(16):
@@ -344,11 +401,11 @@ class Macroblock:
             zerosLeft = 0
             if self.TotalCoeff < endIdx - startIdx + 1:
                 tzVlcIndex = self.TotalCoeff
-                key, total_zeros = self.cavlc.ce_total_zeros(tzVlcIndex)
+                key, total_zeros = self.cavlc.ce_total_zeros(tzVlcIndex, maxNumCoeff)
                 zerosLeft = total_zeros
 
             runVal = np.zeros(shape=(self.TotalCoeff), dtype=np.int32)
-            for i in range (self.TotalCoeff):
+            for i in range (self.TotalCoeff - 1):
                 if zerosLeft > 0 :
                     key, run_before = self.cavlc.ce_run_before(zerosLeft)
                     runVal[i] = run_before
@@ -361,7 +418,7 @@ class Macroblock:
                 coeffNum += runVal[i] + 1
                 coeffLevel[startIdx + coeffNum] = levelVal[i]
             
-        print("done residual block cavlc")
+        #print("done residual block cavlc")
         pass
 
     def residual_block_cabac(self, coeffLevel, startIdx, endIdx, maxNumCoeff):
@@ -425,7 +482,7 @@ class Macroblock:
         slice_map = self.GetMbTypeMap()
         return slice_map[4]
     
-    def cal_nC(self, level, idx):
+    def cal_nC(self, level, idx, iCbCr=0):
         if level == 'ChromaDCLevel':
             if self.sps.ChromaArrayType == 1:
                 return -1
@@ -479,7 +536,32 @@ class Macroblock:
         elif level in ['CrIntra16x16DCLevel', 'CrIntra16x16ACLevel', 'CrLevel4x4']:
             raise Exception("NOT IMP")
         elif level in ['ChromaACLevel']:
-            raise Exception("NOT IMP")
+            xD, yD = self.xDyD("A")
+            x, y = h264scan.inverse_4x4_chroma_block_scanning_process(idx)
+            xN, yN = x+xD, y+yD
+            blkA, xW,yW = self.neighbouring_locations(xN, yN, False)
+            nA = None
+
+            if blkA != None:
+                blkidx = h264scan.chroma_block_indices_4x4(xW, yW)
+                if iCbCr == 0:
+                    nA = self.slice_data.mbs[blkA].ChromaACLevelCbBlocks[blkidx].TotalCoeff
+                else:
+                    nA = self.slice_data.mbs[blkA].ChromaACLevelCrBlocks[blkidx].TotalCoeff
+
+            xD, yD = self.xDyD("A")
+            x, y = h264scan.inverse_4x4_chroma_block_scanning_process(idx)
+            xN, yN = x+xD, y+yD
+            blkB, xW,yW = self.neighbouring_locations(xN, yN, False)
+            nB = None
+
+            if blkB != None:
+                blkidx = h264scan.chroma_block_indices_4x4(xW, yW)
+                if iCbCr == 0:
+                    nB = self.slice_data.mbs[blkA].ChromaACLevelCbBlocks[blkidx].TotalCoeff
+                else:
+                    nB = self.slice_data.mbs[blkA].ChromaACLevelCrBlocks[blkidx].TotalCoeff
+
         
         if blkA != None and blkB != None:
             nC = (nA + nB + 1) >> 1

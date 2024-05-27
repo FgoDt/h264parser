@@ -108,6 +108,7 @@ class Macroblock:
         self.ChromaACLevelCrBlocks = []
         self.ChromaACLevelCbBlocks = []
         self.ChromaDCLevelBlocks = []
+        self.coded_block_pattern = None
         pass
 
 
@@ -120,6 +121,8 @@ class Macroblock:
             self.raw_mb_type = ae()
 
         self.mb_type = self.MbTypeName()
+        self.CodedBlockPatternLuma = self.coded_block_pattern_luma()
+        self.CodedBlockPatternChroma = self.coded_block_pattern_chroma()
 
 
         if self.mb_type == 'I_PCM':
@@ -157,7 +160,7 @@ class Macroblock:
                     else:
                         self.transform_size_8x8_flag = self.cabac.ae()
                 self.mb_pred()
-            
+
             if self.MbPartPredMode != 'Intra_16x16':
                 if self.cavlc != None:
                     self.coded_block_pattern = self.rbsp.me(self.sps.ChromaArrayType)
@@ -174,14 +177,21 @@ class Macroblock:
                         self.transform_size_8x8_flag = self.cavlc.rbsp.u(1)
                     else:
                         self.transform_size_8x8_flag = self.cabac.ae()
-                if ((self.CodedBlockPatternLuma > 0) or 
-                    (self.CodedBlockPatternChroma > 0) or 
-                    (self.MbPartPredMode == 'Intra_16x16')):
-                    if self.cavlc != None:
-                        self.mb_qp_delta = self.cavlc.rbsp.se()
-                    else:
-                        self.mb_qp_delta = self.cabac.ae()
-                    self.residual(0, 15)
+            if ((self.CodedBlockPatternLuma > 0) or 
+                (self.CodedBlockPatternChroma > 0) or 
+                (self.MbPartPredMode == 'Intra_16x16')):
+                if self.cavlc != None:
+                    self.mb_qp_delta = self.cavlc.rbsp.se()
+                else:
+                    self.mb_qp_delta = self.cabac.ae()
+                self.residual(0, 15)
+            else:
+                for i in range(16):
+                    self.blocks.append(block(0))
+                for i in range(4):
+                    self.ChromaACLevelCbBlocks.append(block(0))
+                    self.ChromaACLevelCrBlocks.append(block(0))
+
 
     def mb_pred(self):
         if self.MbPartPredMode in ['Intra_4x4', 'Intra_8x8', 'Intra_16x16']:
@@ -250,8 +260,8 @@ class Macroblock:
         else:
             self.residual_block = None
         
-        self.Intral16x16DClevel = None
-        self.Intral16x16AClevel = None
+        self.Intral16x16DClevel = np.zeros(shape=(16), dtype=np.int32)
+        self.Intral16x16AClevel = np.zeros(shape=(16,16), dtype=np.int32)
         self.LumaLevel4x4 = np.zeros(shape=(16,16), dtype=np.int32)
         self.LumaLevel8x8 = None
         self.startIdx = startIdx
@@ -284,8 +294,8 @@ class Macroblock:
                 for i8x8 in range (NumC8x8):
                     for i4x4 in range(4):
                         if self.CodedBlockPatternChroma & 2:
-                            idx = iCbCr * 2 + i8x8 * NumC8x8 + i4x4
-                            nC = self.cal_nC('ChromaACLevel', idx)
+                            idx = i8x8 * NumC8x8 + i4x4
+                            nC = self.cal_nC('ChromaACLevel', idx, iCbCr)
                             coeff_token, vals = self.cavlc.ce_coeff_token(nC)
                             self.coeff_token = coeff_token
                             self.TrailingOnes = vals[0]
@@ -298,6 +308,10 @@ class Macroblock:
 
                             self.residual_block(self.ChromaACLevel[iCbCr][i8x8*4+i4x4], max(0, startIdx-1), endIdx-1, 15)
                         else:
+                            if iCbCr == 0:
+                                self.ChromaACLevelCbBlocks.append(block(0))
+                            else:
+                                self.ChromaACLevelCrBlocks.append(block(0))
                             for i in range(15):
                                 self.ChromaACLevel[iCbCr][i8x8*4+i4x4][i] = 0
         elif self.sps.ChromaArrayType == 3:
@@ -313,12 +327,27 @@ class Macroblock:
 
     def residual_luma(self, i16x16DClevel, i16x16AClevel, level4x4, level8x8, startIdx, endIdx):
         if startIdx == 0 and self.MbPartPredMode == 'Intra_16x16':
+            nC = self.cal_nC('Intra16x16DCLevel', 0)
+            coeff_token, vals = self.cavlc.ce_coeff_token(nC)
+            self.coeff_token = coeff_token
+            self.TrailingOnes = vals[0]
+            self.TotalCoeff = vals[1]
+            b = block(self.TotalCoeff)
+            #self.blocks.append(b)
             self.residual_block(i16x16DClevel, 0, 15, 16)
         for i8x8 in range(4):
             if (not self.transform_size_8x8_flag) or self.cavlc != None:
                 for i4x4 in range(4):
                     if self.CodedBlockPatternLuma & (1 << i8x8):
                         if self.MbPartPredMode == 'Intra_16x16':
+                            idx  = i8x8*4+i4x4
+                            nC = self.cal_nC('Intra16x16ACLevel', idx)
+                            coeff_token, vals = self.cavlc.ce_coeff_token(nC)
+                            self.coeff_token = coeff_token
+                            self.TrailingOnes = vals[0]
+                            self.TotalCoeff = vals[1]
+                            b = block(self.TotalCoeff)
+                            self.blocks.append(b)
                             self.residual_block(i16x16AClevel[i8x8*4+i4x4], max(0, startIdx -1), endIdx-1, 15)
                         else:
                             luma4x4BlkIdx = i8x8 * 4 + i4x4
@@ -337,6 +366,8 @@ class Macroblock:
 
                             self.residual_block(level4x4[i8x8*4+i4x4], startIdx, endIdx, 16)
                     elif self.MbPartPredMode == 'Intra_16x16':
+                        b = block(0)
+                        self.blocks.append(b)
                         for i in range(15):
                             i16x16AClevel[i8x8*4 + i4x4][i] = 0
                     else:
@@ -469,7 +500,7 @@ class Macroblock:
     def coded_block_pattern_luma(self):
         if self.slice_type != 'I' and self.slice_type != 'SI':
             raise Exception("slice type error, this slice no CodedBlockPatternLuma")
-        if self.raw_mb_type== 0:
+        if self.raw_mb_type== 0 and self.coded_block_pattern != None:
             return self.coded_block_pattern % 16
         slice_map = self.GetMbTypeMap()
         return slice_map[5]
@@ -477,7 +508,7 @@ class Macroblock:
     def coded_block_pattern_chroma(self):
         if self.slice_type != 'I' and self.slice_type != 'SI':
             raise Exception("slice type error, this slice no CodedBlockPatternLuma")
-        if self.raw_mb_type == 0:
+        if self.raw_mb_type == 0 and self.coded_block_pattern != None:
             return self.coded_block_pattern // 16
         slice_map = self.GetMbTypeMap()
         return slice_map[4]
@@ -549,7 +580,7 @@ class Macroblock:
                 else:
                     nA = self.slice_data.mbs[blkA].ChromaACLevelCrBlocks[blkidx].TotalCoeff
 
-            xD, yD = self.xDyD("A")
+            xD, yD = self.xDyD("B")
             x, y = h264scan.inverse_4x4_chroma_block_scanning_process(idx)
             xN, yN = x+xD, y+yD
             blkB, xW,yW = self.neighbouring_locations(xN, yN, False)
@@ -558,9 +589,9 @@ class Macroblock:
             if blkB != None:
                 blkidx = h264scan.chroma_block_indices_4x4(xW, yW)
                 if iCbCr == 0:
-                    nB = self.slice_data.mbs[blkA].ChromaACLevelCbBlocks[blkidx].TotalCoeff
+                    nB = self.slice_data.mbs[blkB].ChromaACLevelCbBlocks[blkidx].TotalCoeff
                 else:
-                    nB = self.slice_data.mbs[blkA].ChromaACLevelCrBlocks[blkidx].TotalCoeff
+                    nB = self.slice_data.mbs[blkB].ChromaACLevelCrBlocks[blkidx].TotalCoeff
 
         
         if blkA != None and blkB != None:

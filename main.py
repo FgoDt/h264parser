@@ -37,7 +37,8 @@ for nalu in nalus :
         print("IDR")
 
     elif params['nal_unit_type'] in [1,4]:
-        h264slice.slice_layer_without_partitioning_rbsp(params, spsparam, ppsparam, rbsp)
+        slice_data =  h264_slice.H264Slice(params, spsparam, ppsparam, rbsp)
+        slice_data.dec()
         print("PIC")
     
 

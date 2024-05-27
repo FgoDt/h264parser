@@ -111,6 +111,13 @@ class Macroblock:
         self.coded_block_pattern = None
         pass
 
+    def skip_mb(self):
+        for i in range(16):
+            self.blocks.append(block(0))
+        for i in range(4):
+            self.ChromaACLevelCbBlocks.append(block(0))
+            self.ChromaACLevelCrBlocks.append(block(0))
+
 
     def dec(self):
         if not self.pps.entropy_coding_mode_flag:
@@ -121,6 +128,8 @@ class Macroblock:
             self.raw_mb_type = ae()
 
         self.mb_type = self.MbTypeName()
+        if self.slice_type == 'B' or self.slice_type == "P":
+            self.NumMbPart = self.num_mb_part() 
         self.CodedBlockPatternLuma = self.coded_block_pattern_luma()
         self.CodedBlockPatternChroma = self.coded_block_pattern_chroma()
 
@@ -144,7 +153,7 @@ class Macroblock:
             noSubMbPartSizeLessThan8x8Flag = 1
             self.MbPartPredMode = self.mb_part_pred_mode(0)
 
-            if self.mb_type != 'I_NxN' and self.MbPartPredMode != 'Intra_16x16' and NumMbPart(self.mb_type, self.slice_type, self.transform_8x8_mode_flag) == 4:
+            if self.mb_type != 'I_NxN' and self.MbPartPredMode != 'Intra_16x16' and self.num_mb_part == 4:
                 self.sub_mb = []
                 sub_mb_pred(self.mb_type)
                 for mbPartIdx in range(4):
@@ -163,12 +172,15 @@ class Macroblock:
 
             if self.MbPartPredMode != 'Intra_16x16':
                 if self.cavlc != None:
-                    self.coded_block_pattern = self.rbsp.me(self.sps.ChromaArrayType)
+                    inter = True
+                    if 'Intra' in self.MbPartPredMode:
+                        inter = False
+                    self.coded_block_pattern = self.rbsp.me(self.sps.ChromaArrayType, inter= inter)
                 else:
                     self.coded_block_pattern = self.cabac.ae()
                 
-                self.CodedBlockPatternLuma = self.coded_block_pattern_luma()
-                self.CodedBlockPatternChroma = self.coded_block_pattern_chroma()
+                self.CodedBlockPatternLuma = self.coded_block_pattern % 16
+                self.CodedBlockPatternChroma = self.coded_block_pattern // 16
                 
                 if ((self.CodedBlockPatternLuma  > 0) and 
                     (self.transform_8x8_mode_flag == 1) and (self.mb_type != 'I_NxN') and (noSubMbPartSizeLessThan8x8Flag == 1) and
@@ -236,23 +248,26 @@ class Macroblock:
                 else:
                     self.intra_chroma_pred_mode = self.cabac.ae()
         elif self.MbPartPredMode != 'Direct':
-            self.NumMbPart = self.num_mb_part() 
+            self.ref_idx_l0 = []
+            self.ref_idx_l1 = []
+            self.mvd_l0 = np.zeros(shape=(2, 1), dtype=np.int32)
+            self.mvd_l1 = np.zeros(shape=(2, 1), dtype=np.int32)
             for mbPartIdx in range(self.NumMbPart):
-                if ((self.pps.num_ref_idx_10_active_minus1 > 0 or self.header.mb_field_decoding_flag != self.header.field_pic_flag) and  
+                if ((self.sheader.num_ref_idx_l0_active_minus1 > 0 or self.slice_data.mb_field_decoding_flag != self.sheader.field_pic_flag) and  
                     self.MbPartPredMode != 'Pred_L1'):
-                    self.ref_idx_10[mbPartIdx] = self.cavlc.te()
+                    self.ref_idx_l0.append( self.rbsp.te(self.sheader.num_ref_idx_l0_active_minus1))
             for mbPartIdx in range(self.NumMbPart):
-                if ((self.pps.num_ref_idx_10_active_minus1 > 0 or self.header.mb_field_decoding_flag != self.header.field_pic_flag) and  
+                if ((self.sheader.num_ref_idx_l1_active_minus1 > 0 or self.slice_data.mb_field_decoding_flag != self.sheader.field_pic_flag) and  
                     self.MbPartPredMode != 'Pred_L1'):
-                    self.ref_idx_11[mbPartIdx] = self.cavlc.te()
-            for mbPartIdx in range(self.numMbPart):
+                    self.ref_idx_l1.append( self.rbsp.te(self.num_ref_idx_l1_active_minus1))
+            for mbPartIdx in range(self.NumMbPart):
                 if self.MbPartPredMode != 'Pred_L1':
                     for compIdx in range(2):
-                        assert False
-            for mbPartIdx in range(self.numMbPart):
+                        self.mvd_l0[compIdx] = self.rbsp.se()
+            for mbPartIdx in range(self.NumMbPart):
                 if self.MbPartPredMode != 'Pred_L0':
                     for compIdx in range(2):
-                        assert False
+                        self.mvd_l1[compIdx] = self.rbsp.se()
 
     def residual(self, startIdx, endIdx):
         if self.cavlc != None:
@@ -498,18 +513,14 @@ class Macroblock:
         return self.GetMbTypeMap()[1]
 
     def coded_block_pattern_luma(self):
-        if self.slice_type != 'I' and self.slice_type != 'SI':
-            raise Exception("slice type error, this slice no CodedBlockPatternLuma")
-        if self.raw_mb_type== 0 and self.coded_block_pattern != None:
-            return self.coded_block_pattern % 16
+        if (self.slice_type == 'P' and self.raw_mb_type < len(P_SP_SLICE_TYPE)) or (self.slice_type == 'B' and self.raw_mb_type < len(B_SLICES_MB_TYPE)) :
+            return 0
         slice_map = self.GetMbTypeMap()
         return slice_map[5]
 
     def coded_block_pattern_chroma(self):
-        if self.slice_type != 'I' and self.slice_type != 'SI':
-            raise Exception("slice type error, this slice no CodedBlockPatternLuma")
-        if self.raw_mb_type == 0 and self.coded_block_pattern != None:
-            return self.coded_block_pattern // 16
+        if (self.slice_type == 'P' and self.raw_mb_type < len(P_SP_SLICE_TYPE)) or (self.slice_type == 'B' and self.raw_mb_type < len(B_SLICES_MB_TYPE)) :
+            return 0
         slice_map = self.GetMbTypeMap()
         return slice_map[4]
     

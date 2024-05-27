@@ -24,6 +24,8 @@ class H264CavlcSlice:
                 mb_skip_run = self.rbsp.ue()
                 prevMbSkipped = mb_skip_run > 0
                 for i in range(mb_skip_run):
+                    mb = h264_mb.Macroblock(self.header.rbsp, self.slice_data)
+                    mb.skip_mb()
                     self.CurrMbAddr = self.NextMbAddress(self.CurrMbAddr)
                 if mb_skip_run > 0 :
                     moreDataFlag = self.rbsp.more_rbsp_data()
@@ -31,7 +33,7 @@ class H264CavlcSlice:
             if moreDataFlag:
                 if self.MbaffFrameFlag and (self.CurrMbAddr%2 == 0 and (self.CurrMbAddr%2 == 1 and prevMbSkipped)):
                     self.mb_field_decoding_flag = self.rbsp.u(1)
-                    self.header.mb_field_decoding_flag = self.mb_field_decoding_flag
+                    self.slice_data.mb_field_decoding_flag = self.mb_field_decoding_flag
                 mb = h264_mb.Macroblock(self.header.rbsp, self.slice_data)
                 mb.dec()
 

@@ -10,4 +10,5 @@ class H264SliceData:
         self.header = header
         self.CurrMbAddr = CurrMbAddr
         self.MBAFF = MBAFF
+        self.mb_field_decoding_flag = 0
         pass

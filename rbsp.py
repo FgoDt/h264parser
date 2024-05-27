@@ -93,6 +93,16 @@ class RBSPBits :
             return coded_block_pattern_idc_0[codeNum][idx]
         else:
             return coded_block_pattern_idc_1[codeNum][idx]
+    
+    def te(self, n):
+        if n == 0:
+            return 0
+        if n > 1:
+            return self.ue()
+        else:
+            b = self.f(1)
+            return  0 if b == 1 else 1
+            
 
     
     def more_rbsp_data(self):

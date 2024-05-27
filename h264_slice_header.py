@@ -10,6 +10,9 @@ class H264SliceHeader:
         self.sps = sps
         self.pps = pps
         self.rbsp = rbsp
+        self.num_ref_idx_l0_active_minus1 = self.pps.num_ref_idx_l0_active_minus1
+        self.num_ref_idx_l1_active_minus1 = self.pps.num_ref_idx_l1_active_minus1
+        self.field_pic_flag = 0
     
     def dec(self):
         self.first_mb_in_slice = self.rbsp.ue()
@@ -40,9 +43,9 @@ class H264SliceHeader:
         if slice_type == 'P' or slice_type == 'SP' or (slice_type == 'B'):
             self.num_ref_idx_active_override_flag = self.rbsp.u(1)
             if self.num_ref_idx_active_override_flag:
-                self.num_ref_idx_10_active_minus1 = self.rbsp.ue()
+                self.num_ref_idx_l0_active_minus1 = self.rbsp.ue()
                 if (slice_type == 'B'):
-                    self.num_ref_idx_11_active_minus1 = self.rbsp.ue()
+                    self.num_ref_idx_l1_active_minus1 = self.rbsp.ue()
         self.ref_pic_list_reordering()
         if ((self.pps.weighted_pred_flag and ((slice_type == 'P') or (slice_type == 'SP'))) or
             ((slice_type == 'B') and self.weighted_bipred_idc)):

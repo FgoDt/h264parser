@@ -66,9 +66,9 @@ class H264Slice:
 #     if slice_type == 'P' or slice_type == 'SP' or (slice_type == 'B'):
 #         header['num_ref_idx_active_override_flag'] = rbsp.u(1)
 #         if header['num_ref_idx_active_override_flag']:
-#             pps['num_ref_idx_10_active_minus1'] = rbsp.ue()
+#             pps['num_ref_idx_l0_active_minus1'] = rbsp.ue()
 #             if (slice_type == 'B'):
-#                 pps['num_ref_idx_11_active_minus1'] = rbsp.ue()
+#                 pps['num_ref_idx_l1_active_minus1'] = rbsp.ue()
 #     ref_pic_list_reordering(header, sps, pps, rbsp)
 #     if ((pps['weighted_pred_flag'] and ((slice_type == 'P') or (slice_type == 'SP'))) or
 #         ((slice_type == 'B') and pps['weighted_bipred_idc'])):

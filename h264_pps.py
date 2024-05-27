@@ -33,8 +33,8 @@ class H264PPS:
                 for i in range(self.pic_size_in_map_units_minus1+1):
                     self.slice_group_id.append(i)
         
-        self.num_ref_idx_10_active_minus1 = self.rbsp.ue()
-        self.num_ref_idx_11_active_minus1 = self.rbsp.ue()
+        self.num_ref_idx_l0_active_minus1 = self.rbsp.ue()
+        self.num_ref_idx_l1_active_minus1 = self.rbsp.ue()
         self.weighted_pred_flag = self.rbsp.u(1)
         self.weighted_bipred_idc = self.rbsp.u(2)
         self.pic_init_qp_minus26 = self.rbsp.se()
@@ -85,8 +85,8 @@ class H264PPS:
 #             for i in range(pps['pic_size_in_map_units_minus1']+1):
 #                 pps['slice_group_id'].append(i)
     
-#     pps['num_ref_idx_10_active_minus1'] = rbsp.ue()
-#     pps['num_ref_idx_11_active_minus1'] = rbsp.ue()
+#     pps['num_ref_idx_l0_active_minus1'] = rbsp.ue()
+#     pps['num_ref_idx_l1_active_minus1'] = rbsp.ue()
 #     pps['weighted_pred_flag'] = rbsp.u(1)
 #     pps['weighted_bipred_idc'] = rbsp.u(2)
 #     pps['pic_init_qp_minus26'] = rbsp.se()

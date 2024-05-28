@@ -27,6 +27,7 @@ class H264CavlcSlice:
                     mb = h264_mb.Macroblock(self.header.rbsp, self.slice_data)
                     mb.skip_mb()
                     self.CurrMbAddr = self.NextMbAddress(self.CurrMbAddr)
+                    self.slice_data.CurrMbAddr = self.CurrMbAddr
                 if mb_skip_run > 0 :
                     moreDataFlag = self.rbsp.more_rbsp_data()
                 

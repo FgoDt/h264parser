@@ -46,8 +46,7 @@ P_SP_SLICE_TYPE = [
 SI_SLICE_TYPE = ['SI', 'Intra_4x4', 'na', 'na', 'na']
 
 I_SLICE_TYPE = [
- ['I_NxN',         0    ,'Intra_4x4'   ,'na' ,'na' ,'na'] 
-,['I_NxN',         1    ,'Intra_8x8'   ,'na' ,'na' ,'na']
+ [['I_NxN',         0    ,'Intra_4x4'   ,'na' ,'na' ,'na'] ,['I_NxN',         1    ,'Intra_8x8'   ,'na' ,'na' ,'na']]
 ,['I_16x16_0_0_0', 'na'  ,'Intra_16x16', 0    ,0    ,0]
 ,['I_16x16_1_0_0', 'na'  ,'Intra_16x16', 1    ,0    ,0]
 ,['I_16x16_2_0_0', 'na'  ,'Intra_16x16', 2    ,0    ,0]
@@ -75,6 +74,31 @@ I_SLICE_TYPE = [
 ,['I_PCM'        , 'na'  ,'na'         , 'na' ,'na' ,'na']
 ]
 
+SUB_MB_P_TYPE=[
+ ['inferred', 'na', 'na', 'na', 'na',]
+,['P_L0_8x8', 1, 'Pred_L0', 8, 8,]
+,['P_L0_8x4', 2, 'Pred_L0', 8, 4,]
+,['P_L0_4x8', 2, 'Pred_L0', 4, 8,]
+,['P_L0_4x4', 4, 'Pred_L0', 4, 4,]
+]
+
+SUB_MB_B_TYPE = [
+['inferred' 'mb_type'        ,4 ,'Direct'   ,4 ,4],
+[0,         'B_Direct_8x8'   ,4 ,'Direct'   ,4 ,4],
+[1,         'B_L0_8x8'       ,1 ,'Pred_L0'  ,8 ,8],
+[2,         'B_L1_8x8'       ,1 ,'Pred_L1'  ,8 ,8],
+[3,         'B_Bi_8x8'       ,1 ,'BiPred'   ,8 ,8],
+[4,         'B_L0_8x4'       ,2 ,'Pred_L0'  ,8 ,4],
+[5,         'B_L0_4x8'       ,2 ,'Pred_L0'  ,4 ,8],
+[6,         'B_L1_8x4'       ,2 ,'Pred_L1'  ,8 ,4],
+[7,         'B_L1_4x8'       ,2 ,'Pred_L1'  ,4 ,8],
+[8,         'B_Bi_8x4'       ,2 ,'BiPred'   ,8 ,4],
+[9,         'B_Bi_4x8'       ,2 ,'BiPred'   ,4 ,8],
+[10,        'B_L0_4x4'       ,4 ,'Pred_L0'  ,4 ,4],
+[11,        'B_L1_4x4'       ,4 ,'Pred_L1'  ,4 ,4],
+[12,        'B_Bi_4x4'       ,4 ,'BiPred'   ,4 ,4],
+]
+
 
 
 class block:
@@ -83,6 +107,31 @@ class block:
         self.type = None
         self.level = None
         pass
+
+class SubMb:
+    def __init__(self, raw_mb_type, mb_type):
+        self.raw_mb_type = raw_mb_type
+        self.mb_type = mb_type
+        self.cal_default()
+        self.ref_idx_l0 = None
+        self.ref_idx_l1 = None
+        pass
+
+    def cal_default(self):
+        self.type_name = None
+        if self.mb_type == "P":
+            self.type_name = SUB_MB_P_TYPE[self.raw_mb_type+1][0]
+            self.NumSubMbPart = SUB_MB_P_TYPE[self.raw_mb_type+1][1]
+            self.SubMbPredMode = SUB_MB_P_TYPE[self.raw_mb_type+1][2]
+            self.SubMbPartWidth = SUB_MB_P_TYPE[self.raw_mb_type+1][3]
+            self.SubMbPartHeight = SUB_MB_P_TYPE[self.raw_mb_type+1][4]
+        else:
+            raise Exception("B NOT IMP")
+        
+        self.mvd_l0 = np.zeros(shape=(self.NumSubMbPart, 2))
+        self.mvd_l1 = np.zeros(shape=(self.NumSubMbPart, 2))
+        pass
+
 
 
 
@@ -153,12 +202,11 @@ class Macroblock:
             noSubMbPartSizeLessThan8x8Flag = 1
             self.MbPartPredMode = self.mb_part_pred_mode(0)
 
-            if self.mb_type != 'I_NxN' and self.MbPartPredMode != 'Intra_16x16' and self.num_mb_part == 4:
-                self.sub_mb = []
-                sub_mb_pred(self.mb_type)
+            if self.mb_type != 'I_NxN' and self.MbPartPredMode != 'Intra_16x16' and self.NumMbPart == 4:
+                self.sub_mb_pred()
                 for mbPartIdx in range(4):
-                    if self.sub_mb[mbPartIdx].type != 'B_Direct_8x8':
-                        if NumSubMbPart(self.sub_mb[mbPartIdx].type) > 1:
+                    if self.sub_mbs[mbPartIdx].type_name != 'B_Direct_8x8':
+                        if self.sub_mbs[mbPartIdx].NumSubMbPart > 1:
                             noSubMbPartSizeLessThan8x8Flag = 0
                     elif not self.sps.direct_8x8_inference_flag:
                         noSubMbPartSizeLessThan8x8Flag = 0
@@ -203,6 +251,37 @@ class Macroblock:
                 for i in range(4):
                     self.ChromaACLevelCbBlocks.append(block(0))
                     self.ChromaACLevelCrBlocks.append(block(0))
+
+    def sub_mb_pred(self):
+        subMbs = []
+        for mbPartIdx in range(4):
+            sub_mb_type = self.rbsp.ue()
+            subMb = SubMb(sub_mb_type, self.slice_type)
+            subMbs.append(subMb)
+        
+        self.sub_mbs = subMbs
+        
+        for mbPartIdx in range(4):
+            if ((self.sheader.num_ref_idx_l0_active_minus1 > 0 or self.slice_data.mb_field_decoding_flag != self.sheader.field_pic_flag) and
+                self.mb_type != 'P_8x8ref0' and subMbs[mbPartIdx].type_name != "B_Direct_8x8" and subMbs[mbPartIdx].SubMbPredMode != 'Pred_L1'):
+                subMbs[mbPartIdx].ref_idx_l0 = self.rbsp.te(self.sheader.num_ref_idx_l0_active_minus1)
+        for mbPartIdx in range(4):
+            if ((self.sheader.num_ref_idx_l1_active_minus1 > 0 or self.slice_data.mb_field_decoding_flag != self.sheader.field_pic_flag) and
+                subMbs[mbPartIdx].type_name != 'B_Direct_8x8' and subMbs[mbPartIdx].SubMbPredMode != 'Pred_L0'):
+                subMbs[mbPartIdx].ref_idx_l1 = self.rbsp.te(self.sheader.num_ref_idx_l1_active_minus1)
+        
+        for mbPartIdx in range(4):
+            if subMbs[mbPartIdx].type_name != 'B_Direct_8x8' and subMbs[mbPartIdx].SubMbPredMode != 'Pred_L1':
+                for subMbPartIdx  in range(subMbs[mbPartIdx].NumSubMbPart):
+                    for compIdx in range(2):
+                        subMbs[mbPartIdx].mvd_l0[subMbPartIdx][compIdx] = self.rbsp.se()
+        
+        for mbPartIdx in range(4):
+            if subMbs[mbPartIdx].type_name != "B_Direct_8x8" and subMbs[mbPartIdx].SubMbPredMode != 'Pred_L0':
+                for subMbPartIdx in range(subMbs[mbPartIdx].NumSubMbPart):
+                    for compIdx in range(2):
+                        subMbs[mbPartIdx].mvd_l1[subMbPartIdx][compile] = self.rbsp.se()
+
 
 
     def mb_pred(self):
@@ -398,7 +477,6 @@ class Macroblock:
             else:
                 for i in range(64):
                     level8x8[i8x8][i] = 0
-        print(level4x4)
     
     def residual_block_cavlc(self, coeffLevel, startIdx, endIdx, maxNumCoeff):
         for i in range (maxNumCoeff):
@@ -469,30 +547,43 @@ class Macroblock:
 
     def residual_block_cabac(self, coeffLevel, startIdx, endIdx, maxNumCoeff):
         pass
+
+    
+    def TransIType(self, cal_mb_type):
+        i_map = I_SLICE_TYPE[cal_mb_type]
+        if cal_mb_type == 0:
+            if self.transform_8x8_mode_flag == 1:
+                return i_map[1]
+            else:
+                return i_map[0]
+        return i_map
     
 
     def GetMbTypeMap(self):
         mb_type = self.raw_mb_type
         slice_type = self.slice_type
         if slice_type == 'I':
-            if self.transform_8x8_mode_flag == 1 or mb_type > 0:
-                mb_type += 1
+            if mb_type == 0:
+                if self.transform_8x8_mode_flag == 1:
+                    return I_SLICE_TYPE[mb_type][1]
+                else:
+                    return I_SLICE_TYPE[mb_type][0]
             return I_SLICE_TYPE[mb_type]
         if slice_type == 'SI':
             if mb_type == 0:
                 return SI_SLICE_TYPE[mb_type]
             else:
-                return I_SLICE_TYPE[mb_type - 1]
+                return self.TransIType(mb_type - 1)
         if slice_type == 'P' or slice_type == 'SP':
             if mb_type < 5:
                 return P_SP_SLICE_TYPE[mb_type]
             else:
-                return I_SLICE_TYPE[mb_type - 5]
+                return self.TransIType(mb_type - 5)
         if slice_type == 'B':
             if mb_type < 23:
                 return B_SLICES_MB_TYPE[mb_type]
             else:
-                return I_SLICES_MB_TYPE[mb_type - 23]
+                return self.TransIType(mb_type - 23)
 
     def MbTypeName(self):
         return  self.GetMbTypeMap()[0]

@@ -7,6 +7,7 @@ import h264_sps
 import h264_slice_header
 import h264scan
 import numpy as np
+import cal
 
 B_SLICES_MB_TYPE=[
  ['B_Direct_16x16' ,'na'   ,'Direct'   ,'na'       ,8  ,8]
@@ -99,7 +100,28 @@ SUB_MB_B_TYPE = [
 [12,        'B_Bi_4x4'       ,4 ,'BiPred'   ,4 ,4],
 ]
 
-
+QPC_MAP = [
+29, 30, 31,
+32,
+32,
+33,
+34,
+34,
+35,
+35,
+36,
+36,
+37,
+37,
+37,
+38,
+38,
+38,
+39,
+39,
+39,
+39,
+]
 
 class block:
     def __init__(self, TotalCoeff):
@@ -151,6 +173,36 @@ class Macroblock:
         self.slice_type = self.sheader.slice_type
         self.transform_8x8_mode_flag = self.pps.transform_8x8_mode_flag
         self.transform_size_8x8_flag = 0
+        self.TransformBypassModeFlag = 1
+        
+        self.mb_qp_delta = 0
+
+        self.QPy_prev = 0
+        if self.CurrMbAddr == 0:
+            self.QPy_prev = 26 + self.pps.pic_init_qp_minus26 + self.sheader.slice_qp_delta
+        else:
+            self.QPy_prev = self.slice_data.mbs[self.CurrMbAddr-1].QPy_prev
+
+        self.QPy = (self.QPy_prev + self.mb_qp_delta + 52 + 2 * self.sps.QpBdOffsetY)%(52 + self.sps.QpBdOffsetY) - self.sps.QpBdOffsetY
+        self.QP_1_y = self.QPy - self.sps.QpBdOffsetY
+
+        if self.sps.qpprime_y_zero_transform_bypass_flag == 0 and self.QP_1_y == 0:
+            self.TransformBypassModeFlag = 0
+        
+        qPi = cal.Clip3(0-self.sps.QpBdOffsetC, 51, self.QPy + self.pps.chroma_qp_index_offset)
+        self.QPcb = qPi
+
+        qPi = cal.Clip3(0-self.sps.QpBdOffsetC, 51, self.QPy + self.pps.second_chroma_qp_index_offset)
+        self.QPcr = qPi
+
+        if self.QPcb >= 30:
+            self.QPcb = QPC_MAP[self.QPcb-30]
+        if self.QPcr >= 30:
+            self.QPcr = QPC_MAP[self.QPcr-30]
+
+        self.QP_1_cb = self.QPcb + self.sps.QpBdOffsetC
+        self.QP_1_cr = self.QPcr + self.sps.QpBdOffsetC
+
 
         self.slice_data.mbs.append(self)
         self.blocks = []
@@ -158,6 +210,21 @@ class Macroblock:
         self.ChromaACLevelCbBlocks = []
         self.ChromaDCLevelBlocks = []
         self.coded_block_pattern = None
+
+        self.Intral16x16DClevel = None
+        self.Intral16x16AClevel = None
+        self.LumaLevel4x4 = None
+        self.LumaLevel8x8 = None
+        self.ChromaDCLevel = None
+        self.ChromaACLevel = None
+
+        self.mbAddrA = self.neighbouring_macroblock_addr('A')
+        self.mbAddrB = self.neighbouring_macroblock_addr('B')
+
+        self.Intra4x4PredMode = np.zeros(shape=16, dtype=np.int32)
+        self.C_l :np.array = np.zeros(shape=(16, 4,4), dtype=np.int32)
+        self.C_cb = np.zeros(shape=(16, 2,2), dtype=np.int32)
+        self.C_cr = np.zeros(shape=(16, 2,2), dtype=np.int32)
         pass
 
     def skip_mb(self):
@@ -244,6 +311,12 @@ class Macroblock:
                     self.mb_qp_delta = self.cavlc.rbsp.se()
                 else:
                     self.mb_qp_delta = self.cabac.ae()
+                
+                self.QPy = (self.QPy_prev + self.mb_qp_delta + 52 + 2 * self.sps.QpBdOffsetY)%(52 + self.sps.QpBdOffsetY) - self.sps.QpBdOffsetY
+                self.QP_1_y = self.QPy - self.sps.QpBdOffsetY
+                if self.QP_1_y != 0:
+                    self.TransformBypassModeFlag = 0
+
                 self.residual(0, 15)
             else:
                 for i in range(16):
@@ -287,22 +360,24 @@ class Macroblock:
     def mb_pred(self):
         if self.MbPartPredMode in ['Intra_4x4', 'Intra_8x8', 'Intra_16x16']:
             if self.MbPartPredMode == 'Intra_4x4':
-                self.prev_intra4x4_pred_mode_flag = []
-                self.rem_intra4x4_pred_mode = []
+                self.prev_intra4x4_pred_mode_flag = np.zeros(shape=16, dtype=np.int32)
+                self.rem_intra4x4_pred_mode = np.zeros(shape=(16), dtype=np.int32)
                 for luma4x4BlkIdx in range(16):
                     flag = 0
                     if self.cavlc != None:
                         flag = self.rbsp.u(1)
                     else:
                         flag = self.cabac.ae()
-                    self.prev_intra4x4_pred_mode_flag.append(flag)
+                    self.prev_intra4x4_pred_mode_flag[luma4x4BlkIdx] = flag
                     if not flag :
                         mode = 0
                         if self.cavlc != None:
                             mode = self.rbsp.u(3)
                         else:
                             mode = self.cabac.ae()
-                        self.rem_intra4x4_pred_mode.append(mode)
+                        self.rem_intra4x4_pred_mode[luma4x4BlkIdx] = mode
+                    else:
+                        self.rem_intra4x4_pred_mode[luma4x4BlkIdx] = 0
 
             if self.MbPartPredMode == 'Intra_8x8':
                 self.prev_intra8x8_pred_mode_flag = []
@@ -354,14 +429,10 @@ class Macroblock:
         else:
             self.residual_block = None
         
-        self.Intral16x16DClevel = np.zeros(shape=(16), dtype=np.int32)
-        self.Intral16x16AClevel = np.zeros(shape=(16,16), dtype=np.int32)
-        self.LumaLevel4x4 = np.zeros(shape=(16,16), dtype=np.int32)
-        self.LumaLevel8x8 = None
         self.startIdx = startIdx
         self.endIdx = endIdx
 
-        self.residual_luma(self.Intral16x16DClevel, self.Intral16x16AClevel, self.LumaLevel4x4, self.LumaLevel8x8, self.startIdx, self.endIdx)
+        self.residual_luma(self.startIdx, self.endIdx)
 
         if self.sps.ChromaArrayType in [1, 2]:
             NumC8x8 = 4 // (self.sps.SubWidthC * self.sps.SubHeightC)
@@ -415,12 +486,16 @@ class Macroblock:
             self.CrLevel4x4 = np.zeros(shape=(16,16), dtype=np.int32)
             self.CrLevel8x8 = np.zeros(shape=(16,16), dtype=np.int32)
 
+            raise Exception("NOT IMP")
+
             self.residual_luma(self.Intral16x16DClevel, self.Intral16x16AClevel, self.CbLevel4x4, self.CbLevel8x8, startIdx, endIdx)
             self.residual_luma(self.Intral16x16DClevel, self.Intral16x16AClevel, self.CrLevel4x4, self.CrLevel8x8, startIdx, endIdx)
 
 
-    def residual_luma(self, i16x16DClevel, i16x16AClevel, level4x4, level8x8, startIdx, endIdx):
+    def residual_luma(self, startIdx, endIdx):
         if startIdx == 0 and self.MbPartPredMode == 'Intra_16x16':
+            if type(self.Intral16x16DClevel) == type(None):
+                self.Intral16x16DClevel = np.zeros(shape=(16), dtype=np.int32)
             nC = self.cal_nC('Intra16x16DCLevel', 0)
             coeff_token, vals = self.cavlc.ce_coeff_token(nC)
             self.coeff_token = coeff_token
@@ -428,7 +503,7 @@ class Macroblock:
             self.TotalCoeff = vals[1]
             b = block(self.TotalCoeff)
             #self.blocks.append(b)
-            self.residual_block(i16x16DClevel, 0, 15, 16)
+            self.residual_block(self.Intral16x16DClevel, 0, 15, 16)
         for i8x8 in range(4):
             if (not self.transform_size_8x8_flag) or self.cavlc != None:
                 for i4x4 in range(4):
@@ -442,7 +517,9 @@ class Macroblock:
                             self.TotalCoeff = vals[1]
                             b = block(self.TotalCoeff)
                             self.blocks.append(b)
-                            self.residual_block(i16x16AClevel[i8x8*4+i4x4], max(0, startIdx -1), endIdx-1, 15)
+                            if type(self.Intral16x16AClevel) == type(None):
+                                self.Intral16x16AClevel = np.zeros(shape=(16,16), dtype=np.int32)
+                            self.residual_block(self.Intral16x16AClevel[i8x8*4+i4x4], max(0, startIdx -1), endIdx-1, 15)
                         else:
                             luma4x4BlkIdx = i8x8 * 4 + i4x4
                             #xDyD = GetxDyD('A', self.mb_type)
@@ -457,26 +534,34 @@ class Macroblock:
                             b = block(self.TotalCoeff)
                             self.blocks.append(b)
                             
-
-                            self.residual_block(level4x4[i8x8*4+i4x4], startIdx, endIdx, 16)
+                            if type(self.LumaLevel4x4) == type(None):
+                                self.LumaLevel4x4 = np.zeros(shape=(16,16), dtype=np.int32) 
+                            self.residual_block(self.LumaLevel4x4[i8x8*4+i4x4], startIdx, endIdx, 16)
                     elif self.MbPartPredMode == 'Intra_16x16':
+                        if type(self.Intral16x16AClevel) == type(None):
+                            self.Intral16x16AClevel = np.zeros(shape=(16,16), dtype=np.int32)
                         b = block(0)
                         self.blocks.append(b)
                         for i in range(15):
-                            i16x16AClevel[i8x8*4 + i4x4][i] = 0
+                            self.Intral16x16AClevel[i8x8*4 + i4x4][i] = 0
                     else:
+                        if type(self.LumaLevel4x4) == type(None):
+                            self.LumaLevel4x4 = np.zeros(shape=(16,16), dtype=np.int32) 
                         for i in range(16):
-                            level4x4[i8x8 * 4 + i4x4][i] = 0
+                            self.LumaLevel4x4[i8x8 * 4 + i4x4][i] = 0
                         b = block(0)
                         self.blocks.append(b)
                     if self.cavlc != None and self.transform_size_8x8_flag:
-                        for i in range(16):
-                            level8x8[i8x8][4*i+i4x4] = level4x4[i8x8*4 + i4x4][i]
+                        raise Exception("NOT IMP")
+                        #for i in range(16):
+                        #    level8x8[i8x8][4*i+i4x4] = level4x4[i8x8*4 + i4x4][i]
             elif self.CodedBlockPatternLuma & (1 << i8x8):
-                self.residual_block(level8x8[i8x8], 4 * startIdx, 4 * endIdx + 3, 64)
+                raise Exception("NOT IMP")
+                #self.residual_block(level8x8[i8x8], 4 * startIdx, 4 * endIdx + 3, 64)
             else:
-                for i in range(64):
-                    level8x8[i8x8][i] = 0
+                raise Exception("NOT IMP")
+                #for i in range(64):
+                #    level8x8[i8x8][i] = 0
     
     def residual_block_cavlc(self, coeffLevel, startIdx, endIdx, maxNumCoeff):
         for i in range (maxNumCoeff):

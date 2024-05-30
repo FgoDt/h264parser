@@ -4,6 +4,8 @@ from h264_slice_header import H264SliceHeader
 import h264_slice_data
 import numpy as np
 
+import h264_slice_dec
+
 
 class H264CavlcSlice:
     def __init__(self, header:H264SliceHeader):
@@ -42,6 +44,7 @@ class H264CavlcSlice:
             self.CurrMbAddr = self.NextMbAddress(self.CurrMbAddr)
             self.slice_data.CurrMbAddr = self.CurrMbAddr
             if not moreDataFlag :
+                h264_slice_dec.dec(self.slice_data)
                 break
     
     def NextMbAddress(self, n):

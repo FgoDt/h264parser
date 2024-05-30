@@ -37,8 +37,8 @@ class H264VUI:
         if self.aspect_ratio_info_present_flag == 1:
             self.aspect_ratio_idc = self.rbsp.u(8)
             if self.aspect_ratio_idc == Extended_SAR :
-                vui[sar_width] = self.rbsp.u(16)
-                vui[sar_height] = self.rbsp.u(16)
+                self.sar_width = self.rbsp.u(16)
+                self.sar_height = self.rbsp.u(16)
         self.overscan_info_present_flag=self.rbsp.u(1)
         if self.overscan_info_present_flag == 1:
             self.overscan_appropriate_flag = self.rbsp.u(1)
@@ -90,6 +90,7 @@ class H264SPS:
         self.chroma_format_idc = 1
         self.bit_depth_luma_minus8 = 0
         self.bit_depth_chroma_minus8 = 0
+        self.qpprime_y_zero_transform_bypass_flag = 0
     
     def dec(self):
         self.profile_idc = self.rbsp.u(8)
@@ -116,10 +117,10 @@ class H264SPS:
                 self.separate_colour_plane_flag = self.rbsp.u(1)
             self.bit_depth_luma_minus8 = self.rbsp.ue()
             self.bit_depth_chroma_minus8 = self.rbsp.ue()
-            self.qprime_y_zero_transform_bypass_flag = self.rbsp.u(1)
+            self.qpprime_y_zero_transform_bypass_flag = self.rbsp.u(1)
             self.seq_scaling_matrix_present_flag = self.rbsp.u(1)
             if self.seq_scaling_matrix_present_flag:
-                loop = 8 if chroma_format_idc == 3 else 12
+                loop = 8 if self.chroma_format_idc == 3 else 12
                 list_flag = []
                 for i in range(loop):
                     flag = self.rbsp.u(1)

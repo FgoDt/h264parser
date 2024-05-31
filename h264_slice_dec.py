@@ -59,8 +59,12 @@ def dec_intra_mb(sl :h264_slice_data.H264SliceData, mb:Macroblock):
     if mb.transform_size_8x8_flag == 0:
         inverse_scanning_4x4_transform_coeff(mb)
     
+    r = mb.C_l
     if mb.TransformBypassModeFlag != 1:
-        scaling_and_transformation_4x4_luma(mb)
+        d = scaling_and_transformation_4x4_luma(mb)
+        r = tranformation_residual_4x4_blocks(d)
+
+    if mb.TransformBypassModeFlag == 1 and 
 
 
 ZIG_ZAG_4x4_MAP = [
@@ -95,3 +99,41 @@ def scaling_and_transformation_4x4_luma(mb :Macroblock):
                     d[blkidx][i][j] = (mb.C_l[blkidx][i][j] * cal.LevelScale4x4(qP%6, i, j)) << (qP//6-4)
                 else:
                     d[blkidx][i][j] = (mb.C_l[blkidx][i][j] * cal.LevelScale4x4(qP%6, i, j) + 2**(3-qP/6)) >> (4 - qP//6)
+    
+    return d
+
+def tranformation_residual_4x4_blocks(d:np.array):
+    e = np.zeros(shape=(4,4), dtype=np.int32)
+    f = np.zeros(shape=(4,4), dtype=np.int32)
+    g = np.zeros(shape=(4,4), dtype=np.int32)
+    h = np.zeros(shape=(4,4), dtype=np.int32)
+    r = np.zeros(shape=(4,4), dtype=np.int32)
+    for i in range(4):
+        e[i][0] = d[i][0] + d[i][2]
+        e[i][1] = d[i][0] - d[i][2]
+        e[i][2] = (d[i][1] >> 1) - d[i][3]
+        e[i][3] = d[i][1] + (d[i][3] >> 1)
+    
+    for i in range(4):
+        f[i][0] = e[i][0] + e[i][3]
+        f[i][1] = e[i][1] + e[i][2]
+        f[i][2] = e[i][1] - e[i][2]
+        f[i][3] = e[i][0] - e[i][3]
+    
+    for j in range(4):
+        g[0][j] = f[0][j] + f[2][j]
+        g[1][j] = f[0][j] - f[2][j]
+        g[2][j] = (f[1][j]>>1) - f[3][j]
+        g[3][j] = f[1][j] + (f[3][j] >> 1)
+    
+    for h in range(4):
+        h[0][j] = g[0][j] + g[3][j]
+        h[1][j] = g[1][j] + g[2][j]
+        h[2][j] = g[2][j] - g[2][j]
+        h[3][j] = g[0][j] - g[3][j]
+    
+    for i in range(4):
+        for j in range(4):
+            r[i][j] = (h[i][j] + 2 ** 5) >> 6
+    
+    return r

@@ -4,6 +4,7 @@ from h264_mb import Macroblock
 import numpy as np
 import cal
 import math
+import h264scan
 
 def dec(sl :h264_slice_data.H264SliceData):
     if sl.header.slice_type == "I":
@@ -64,7 +65,13 @@ def dec_intra_mb(sl :h264_slice_data.H264SliceData, mb:Macroblock):
         d = scaling_and_transformation_4x4_luma(mb)
         r = tranformation_residual_4x4_blocks(d)
 
-    if mb.TransformBypassModeFlag == 1 and 
+    if mb.TransformBypassModeFlag == 1 and mb.MbPartPredMode == 'Intra_4x4' :
+        for blkidx in range(16):
+            if mb.Intra4x4PredMode[blkidx] == 0 or mb.Intra4x4PredMode[blkidx] == 1:
+                r[blkidx]  = intra_residual_tranform_bypass_decoding(4, 4, mb.Intra4x4PredMode[blkidx], r[blkidx])
+    
+    xO, yO = h264scan.inverse_4x4_luma_block_scanning_process()
+
 
 
 ZIG_ZAG_4x4_MAP = [
@@ -137,3 +144,27 @@ def tranformation_residual_4x4_blocks(d:np.array):
             r[i][j] = (h[i][j] + 2 ** 5) >> 6
     
     return r
+
+def intra_residual_tranform_bypass_decoding(nW, nH, horPredFlag, r :np.array):
+    f = np.zeros(shape=(nW, nH), dtype=np.int32)
+
+    for i in range(nH):
+        for j in range(nW):
+            f[i][j] = r[i][j]
+    
+    if horPredFlag == 0:
+        for i in range (nH):
+            for j in range (nW):
+                tmp = 0
+                for k in range(i+1):
+                    tmp += f[k][j]
+                r[i][j] = tmp
+    else:
+        for i in range(nH):
+            for j in range(nW):
+                tmp = 0
+                for k in range(j+1):
+                    tmp += f[i][k]
+                r[i][j] = tmp
+    return f
+
